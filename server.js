@@ -311,10 +311,21 @@ app.post('/api/admin/testimoni', (req, res, next) => {
 // ─── STATE: sesi /add dan /new ───────────────────────────────
 const sessions = {};
 
+// Helper: hapus pesan lama lalu kirim baru
+async function editOrSend(chatId, msgId, text, opts = {}) {
+  try {
+    if (msgId) await bot.deleteMessage(chatId, msgId).catch(() => {});
+    return await bot.sendMessage(chatId, text, opts);
+  } catch(e) {
+    return await bot.sendMessage(chatId, text, opts);
+  }
+}
+
 // /start
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
   if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
   const adminUrl = 'https://zynsproduct.kesug.com/admin.html';
+  await bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
   bot.sendMessage(msg.chat.id,
 `👋 Halo Admin! Selamat datang di Zystem Bot.
 
@@ -342,8 +353,9 @@ Berikut daftar perintah yang tersedia:
 });
 
 // /sum — statistik
-bot.onText(/\/sum/, (msg) => {
+bot.onText(/\/sum/, async (msg) => {
   if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  await bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
   const orders = readJSON('orders.json');
   const approved = orders.filter(o => o.status === 'approved');
   const pending = orders.filter(o => o.status === 'pending');
@@ -360,13 +372,13 @@ Total Order: ${orders.length}
 });
 
 // /add [productId] — tambah stok
-bot.onText(/\/add(?:\s+(\d+))?/, (msg, match) => {
+bot.onText(/\/add(?:\s+(\d+))?/, async (msg, match) => {
   if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
   const chatId = msg.chat.id;
+  await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
   const data = readJSON('products.json');
 
   if (!match[1]) {
-    // Tampilkan daftar produk dulu
     const list = data.products.map(p => `${p.id}. ${p.name} (${p.duration}) — stok: ${p.stock.length}`).join('\n');
     bot.sendMessage(chatId, `Pilih produk dengan ketik:\n/add [nomor]\n\n${list}`);
     return;
@@ -376,8 +388,7 @@ bot.onText(/\/add(?:\s+(\d+))?/, (msg, match) => {
   const product = data.products.find(p => p.id === productId);
   if (!product) return bot.sendMessage(chatId, '❌ Produk tidak ditemukan.');
 
-  sessions[chatId] = { action: 'add_stock', productId };
-  bot.sendMessage(chatId,
+  const sent = await bot.sendMessage(chatId,
 `Tambah stok untuk: ${product.name} (${product.duration})
 Stok saat ini: ${product.stock.length}
 
@@ -385,13 +396,16 @@ Kirim akun satu per baris, contoh:
 email@gmail.com | pass: abc123
 email2@gmail.com | pass: xyz456`
   );
+  sessions[chatId] = { action: 'add_stock', productId, botMsgId: sent.message_id };
 });
 
 // /new — buat produk baru
-bot.onText(/\/new/, (msg) => {
+bot.onText(/\/new/, async (msg) => {
   if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
-  sessions[msg.chat.id] = { action: 'new_product', step: 'name' };
-  bot.sendMessage(msg.chat.id, '🆕 Buat produk baru\n\nKetik nama produk:');
+  const chatId = msg.chat.id;
+  await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+  const sent = await bot.sendMessage(chatId, '🆕 Buat produk baru\n\nKetik nama produk:');
+  sessions[chatId] = { action: 'new_product', step: 'name', botMsgId: sent.message_id };
 });
 
 // Handler pesan teks biasa (untuk sesi /add dan /new)
@@ -405,6 +419,10 @@ bot.on('message', async (msg) => {
   const session = sessions[chatId];
   if (!session || !text) return;
 
+  // Hapus pesan user & pesan bot sebelumnya
+  await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+  const prevBotMsgId = session.botMsgId;
+
   // Sesi tambah stok
   if (session.action === 'add_stock') {
     const data = readJSON('products.json');
@@ -414,7 +432,7 @@ bot.on('message', async (msg) => {
     product.stock.push(...lines);
     writeJSON('products.json', data);
     delete sessions[chatId];
-    bot.sendMessage(chatId, `✅ ${lines.length} akun ditambahkan ke ${product.name}!\nTotal stok sekarang: ${product.stock.length}`);
+    await editOrSend(chatId, prevBotMsgId, `✅ ${lines.length} akun ditambahkan ke ${product.name}!\nTotal stok sekarang: ${product.stock.length}`);
     return;
   }
 
@@ -423,20 +441,26 @@ bot.on('message', async (msg) => {
     if (session.step === 'name') {
       sessions[chatId].name = text;
       sessions[chatId].step = 'duration';
-      bot.sendMessage(chatId, `Nama: ${text}\n\nKetik durasi produk (contoh: 1 Bulan, 1 Tahun, Selamanya):`);
+      const sent = await editOrSend(chatId, prevBotMsgId, `Nama: ${text}\n\nKetik durasi produk (contoh: 1 Bulan, 1 Tahun, Selamanya):`);
+      sessions[chatId].botMsgId = sent.message_id;
     } else if (session.step === 'duration') {
       sessions[chatId].duration = text;
       sessions[chatId].step = 'price';
-      bot.sendMessage(chatId, `Durasi: ${text}\n\nKetik harga produk (angka saja, contoh: 15000):`);
+      const sent = await editOrSend(chatId, prevBotMsgId, `Durasi: ${text}\n\nKetik harga produk (angka saja, contoh: 15000):`);
+      sessions[chatId].botMsgId = sent.message_id;
     } else if (session.step === 'price') {
       const price = parseInt(text.replace(/\D/g, ''));
-      if (isNaN(price)) return bot.sendMessage(chatId, '❌ Harga harus angka. Coba lagi:');
+      if (isNaN(price)) {
+        const sent = await editOrSend(chatId, prevBotMsgId, '❌ Harga harus angka. Coba lagi:');
+        sessions[chatId].botMsgId = sent.message_id;
+        return;
+      }
       const data = readJSON('products.json');
       const newId = Math.max(...data.products.map(p => p.id), 0) + 1;
       data.products.push({ id: newId, name: session.name, duration: session.duration, price, stock: [] });
       writeJSON('products.json', data);
       delete sessions[chatId];
-      bot.sendMessage(chatId,
+      await editOrSend(chatId, prevBotMsgId,
 `✅ Produk baru berhasil dibuat!
 
 ID: ${newId}
