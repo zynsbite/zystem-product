@@ -221,3 +221,89 @@ app.get('/api/status', (req, res) => {
 
 // ─── START ───────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`✅ Zystem running at http://localhost:${PORT}`));
+
+// ─── ADMIN PASSWORD ──────────────────────────────────────────
+const ADMIN_PASS = process.env.ADMIN_PASS || 'zystem2024';
+
+function checkAdmin(req, res) {
+  const pass = req.headers['x-admin-pass'];
+  if (pass !== ADMIN_PASS) { res.status(401).json({ error: 'Unauthorized' }); return false; }
+  return true;
+}
+
+// ─── ADMIN: GET ALL ORDERS ───────────────────────────────────
+app.get('/api/admin/orders', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  res.json(readJSON('orders.json'));
+});
+
+// ─── ADMIN: ACC ORDER ────────────────────────────────────────
+app.post('/api/admin/acc/:id', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const orderId = req.params.id;
+  const orders = readJSON('orders.json');
+  const orderIdx = orders.findIndex(o => o.id === orderId);
+  if (orderIdx === -1) return res.status(404).json({ error: 'Order tidak ditemukan' });
+  const order = orders[orderIdx];
+  if (order.status === 'approved') return res.json({ error: 'Sudah di-ACC' });
+
+  const data = readJSON('products.json');
+  let accountsDelivered = [];
+  for (const item of order.items) {
+    const product = data.products.find(p => p.id === item.id);
+    if (!product) continue;
+    for (let i = 0; i < item.qty; i++) {
+      if (product.stock.length > 0) accountsDelivered.push({ product: `${product.name} (${product.duration})`, account: product.stock.shift() });
+    }
+  }
+  writeJSON('products.json', data);
+  orders[orderIdx].status = 'approved';
+  orders[orderIdx].accounts = accountsDelivered;
+  orders[orderIdx].approvedAt = new Date();
+  writeJSON('orders.json', orders);
+  res.json({ success: true });
+});
+
+// ─── ADMIN: GET PRODUCTS (WITH STOCK) ────────────────────────
+app.get('/api/admin/products', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  res.json(readJSON('products.json'));
+});
+
+// ─── ADMIN: ADD STOCK ────────────────────────────────────────
+app.post('/api/admin/stock/:id', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { accounts } = req.body;
+  const data = readJSON('products.json');
+  const product = data.products.find(p => p.id == req.params.id);
+  if (!product) return res.status(404).json({ error: 'Produk tidak ditemukan' });
+  const lines = accounts.split('\n').map(l => l.trim()).filter(Boolean);
+  product.stock.push(...lines);
+  writeJSON('products.json', data);
+  res.json({ success: true, added: lines.length, total: product.stock.length });
+});
+
+// ─── ADMIN: TOGGLE STATUS ────────────────────────────────────
+app.post('/api/admin/status', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { open } = req.body;
+  writeJSON('status.json', { open });
+  res.json({ success: true, open });
+});
+
+// ─── ADMIN: DELETE TESTIMONI ─────────────────────────────────
+app.delete('/api/admin/testimoni/:filename', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const filePath = path.join(__dirname, 'uploads/testimoni', req.params.filename);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  res.json({ success: true });
+});
+
+// ─── ADMIN: UPLOAD TESTIMONI ─────────────────────────────────
+app.post('/api/admin/testimoni', (req, res, next) => {
+  const pass = req.headers['x-admin-pass'];
+  if (pass !== ADMIN_PASS) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}, uploadTesti.single('image'), (req, res) => {
+  res.json({ success: true, filename: req.file.filename });
+});
