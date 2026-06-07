@@ -87,7 +87,10 @@ app.post('/api/order', uploadProof.single('proof'), async (req, res) => {
     msg += `\n💰 Total: Rp${Number(total).toLocaleString('id-ID')}\n\n`;
     msg += `Ketik /acc_${orderId} untuk ACC pesanan ini.`;
 
-    await bot.sendMessage(ADMIN_CHAT_ID, msg);
+    // Tombol inline ACC
+    const keyboard = { inline_keyboard: [[{ text: '✅ ACC Pesanan', callback_data: `acc_${orderId}` }]] };
+
+    await bot.sendMessage(ADMIN_CHAT_ID, msg, { reply_markup: keyboard });
 
     if (proofPath) {
       await bot.sendPhoto(ADMIN_CHAT_ID, path.join(__dirname, 'uploads', req.file.filename), { caption: `Bukti TF - ${orderId}` });
@@ -165,6 +168,36 @@ bot.onText(/\/acc_(.+)/, async (msg, match) => {
   writeJSON('orders.json', orders);
 
   bot.sendMessage(msg.chat.id, `✅ Order ${orderId} berhasil di-ACC!\nStok telah dikirim ke user.`);
+});
+
+// Tombol inline ACC
+bot.on('callback_query', async (query) => {
+  if (String(query.from.id) !== String(ADMIN_CHAT_ID)) return;
+  const data = query.data;
+  if (!data.startsWith('acc_')) return;
+  const orderId = data.replace('acc_', '');
+  const orders = readJSON('orders.json');
+  const orderIdx = orders.findIndex(o => o.id === orderId);
+  if (orderIdx === -1) { bot.answerCallbackQuery(query.id, { text: '❌ Order tidak ditemukan' }); return; }
+  const order = orders[orderIdx];
+  if (order.status === 'approved') { bot.answerCallbackQuery(query.id, { text: '⚠️ Sudah di-ACC sebelumnya' }); return; }
+  const prodData = readJSON('products.json');
+  let accountsDelivered = [];
+  for (const item of order.items) {
+    const product = prodData.products.find(p => p.id === item.id);
+    if (!product) continue;
+    for (let i = 0; i < item.qty; i++) {
+      if (product.stock.length > 0) accountsDelivered.push({ product: `${product.name} (${product.duration})`, account: product.stock.shift() });
+    }
+  }
+  writeJSON('products.json', prodData);
+  orders[orderIdx].status = 'approved';
+  orders[orderIdx].accounts = accountsDelivered;
+  orders[orderIdx].approvedAt = new Date();
+  writeJSON('orders.json', orders);
+  bot.answerCallbackQuery(query.id, { text: '✅ Order berhasil di-ACC!' });
+  bot.editMessageText(`✅ ACC - ${orderId}
+Stok telah dikirim ke user.`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
 });
 
 // /open & /close
