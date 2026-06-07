@@ -307,3 +307,145 @@ app.post('/api/admin/testimoni', (req, res, next) => {
 }, uploadTesti.single('image'), (req, res) => {
   res.json({ success: true, filename: req.file.filename });
 });
+
+// ─── STATE: sesi /add dan /new ───────────────────────────────
+const sessions = {};
+
+// /start
+bot.onText(/\/start/, (msg) => {
+  if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  const adminUrl = 'https://zynsproduct.kesug.com/admin.html';
+  bot.sendMessage(msg.chat.id,
+`👋 Halo Admin! Selamat datang di Zystem Bot.
+
+Berikut daftar perintah yang tersedia:
+
+📦 ORDER
+/acc_[OrderID] — ACC pesanan masuk
+
+📊 STATISTIK
+/sum — Lihat total pembeli & pemasukan
+
+🗂️ STOK
+/add [ID Produk] — Tambah stok akun ke produk
+/testi — Upload foto testimoni
+
+🆕 PRODUK
+/new — Buat produk baru
+
+🔛 TOKO
+/open — Buka toko
+/close — Tutup toko
+
+🖥️ Admin Panel: ${adminUrl}`
+  );
+});
+
+// /sum — statistik
+bot.onText(/\/sum/, (msg) => {
+  if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  const orders = readJSON('orders.json');
+  const approved = orders.filter(o => o.status === 'approved');
+  const pending = orders.filter(o => o.status === 'pending');
+  const totalIncome = approved.reduce((sum, o) => sum + Number(o.total), 0);
+  bot.sendMessage(msg.chat.id,
+`📊 Statistik Zystem.Product
+
+Total Order: ${orders.length}
+✅ Approved: ${approved.length}
+⏳ Pending: ${pending.length}
+
+💰 Total Pemasukan: Rp${totalIncome.toLocaleString('id-ID')}`
+  );
+});
+
+// /add [productId] — tambah stok
+bot.onText(/\/add(?:\s+(\d+))?/, (msg, match) => {
+  if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  const chatId = msg.chat.id;
+  const data = readJSON('products.json');
+
+  if (!match[1]) {
+    // Tampilkan daftar produk dulu
+    const list = data.products.map(p => `${p.id}. ${p.name} (${p.duration}) — stok: ${p.stock.length}`).join('\n');
+    bot.sendMessage(chatId, `Pilih produk dengan ketik:\n/add [nomor]\n\n${list}`);
+    return;
+  }
+
+  const productId = parseInt(match[1]);
+  const product = data.products.find(p => p.id === productId);
+  if (!product) return bot.sendMessage(chatId, '❌ Produk tidak ditemukan.');
+
+  sessions[chatId] = { action: 'add_stock', productId };
+  bot.sendMessage(chatId,
+`Tambah stok untuk: ${product.name} (${product.duration})
+Stok saat ini: ${product.stock.length}
+
+Kirim akun satu per baris, contoh:
+email@gmail.com | pass: abc123
+email2@gmail.com | pass: xyz456`
+  );
+});
+
+// /new — buat produk baru
+bot.onText(/\/new/, (msg) => {
+  if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  sessions[msg.chat.id] = { action: 'new_product', step: 'name' };
+  bot.sendMessage(msg.chat.id, '🆕 Buat produk baru\n\nKetik nama produk:');
+});
+
+// Handler pesan teks biasa (untuk sesi /add dan /new)
+bot.on('message', async (msg) => {
+  if (String(msg.chat.id) !== String(ADMIN_CHAT_ID)) return;
+  if (msg.text && msg.text.startsWith('/')) return;
+  if (msg.photo) return;
+
+  const chatId = msg.chat.id;
+  const text = msg.text?.trim();
+  const session = sessions[chatId];
+  if (!session || !text) return;
+
+  // Sesi tambah stok
+  if (session.action === 'add_stock') {
+    const data = readJSON('products.json');
+    const product = data.products.find(p => p.id === session.productId);
+    if (!product) return;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    product.stock.push(...lines);
+    writeJSON('products.json', data);
+    delete sessions[chatId];
+    bot.sendMessage(chatId, `✅ ${lines.length} akun ditambahkan ke ${product.name}!\nTotal stok sekarang: ${product.stock.length}`);
+    return;
+  }
+
+  // Sesi buat produk baru
+  if (session.action === 'new_product') {
+    if (session.step === 'name') {
+      sessions[chatId].name = text;
+      sessions[chatId].step = 'duration';
+      bot.sendMessage(chatId, `Nama: ${text}\n\nKetik durasi produk (contoh: 1 Bulan, 1 Tahun, Selamanya):`);
+    } else if (session.step === 'duration') {
+      sessions[chatId].duration = text;
+      sessions[chatId].step = 'price';
+      bot.sendMessage(chatId, `Durasi: ${text}\n\nKetik harga produk (angka saja, contoh: 15000):`);
+    } else if (session.step === 'price') {
+      const price = parseInt(text.replace(/\D/g, ''));
+      if (isNaN(price)) return bot.sendMessage(chatId, '❌ Harga harus angka. Coba lagi:');
+      const data = readJSON('products.json');
+      const newId = Math.max(...data.products.map(p => p.id), 0) + 1;
+      data.products.push({ id: newId, name: session.name, duration: session.duration, price, stock: [] });
+      writeJSON('products.json', data);
+      delete sessions[chatId];
+      bot.sendMessage(chatId,
+`✅ Produk baru berhasil dibuat!
+
+ID: ${newId}
+Nama: ${session.name}
+Durasi: ${session.duration}
+Harga: Rp${price.toLocaleString('id-ID')}
+
+Tambah stok dengan: /add ${newId}`
+      );
+    }
+  }
+});
