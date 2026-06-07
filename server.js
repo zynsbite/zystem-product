@@ -26,6 +26,14 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// ─── AUTO CREATE FOLDERS & FILES ────────────────────────────
+const uploadsDir = path.join(__dirname, 'uploads');
+const testiDir = path.join(__dirname, 'uploads/testimoni');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(testiDir)) fs.mkdirSync(testiDir, { recursive: true });
+if (!fs.existsSync(path.join(__dirname, 'orders.json'))) fs.writeFileSync(path.join(__dirname, 'orders.json'), '[]');
+if (!fs.existsSync(path.join(__dirname, 'status.json'))) fs.writeFileSync(path.join(__dirname, 'status.json'), '{"open":true}');
+
 // ─── MULTER SETUP ───────────────────────────────────────────
 const storageProof = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
