@@ -1,0 +1,44 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "Alight Motion Pro",
+      "duration": "1 Tahun",
+      "price": 5000,
+      "stock": [
+        "email: am_user1@gmail.com | pass: AMpro2024!",
+        "email: am_user2@gmail.com | pass: AMsecure99"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "CapCut Pro",
+      "duration": "1 Minggu",
+      "price": 15000,
+      "stock": [
+        "email: cc_user1@gmail.com | pass: CapCut2024#",
+        "email: cc_user2@gmail.com | pass: CCpro77!"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Canva Pro",
+      "duration": "1 Bulan",
+      "price": 5000,
+      "stock": [
+        "email: canva1@gmail.com | pass: Canva2024@",
+        "email: canva2@gmail.com | pass: CVApro55!"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "ChatGPT Go",
+      "duration": "3 Bulan",
+      "price": 27000,
+      "stock": [
+        "email: gpt_user1@gmail.com | pass: GPTgo2024$",
+        "email: gpt_user2@gmail.com | pass: ChatG88@"
+      ]
+    }
+  ]
+}
