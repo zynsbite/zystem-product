@@ -45,7 +45,7 @@ const writeJSON = (file, data) => fs.writeFileSync(path.join(__dirname, file), J
 
 // ─── API: GET PRODUCTS ──────────────────────────────────────
 app.get('/api/products', (req, res) => {
-  const data = readJSON('stock/products.json');
+  const data = readJSON('products.json');
   // Kirim tanpa stock data ke frontend
   const safe = data.products.map(({ stock, ...p }) => ({ ...p, stockCount: stock.length }));
   res.json(safe);
@@ -137,7 +137,7 @@ bot.onText(/\/acc_(.+)/, async (msg, match) => {
   if (order.status === 'approved') return bot.sendMessage(msg.chat.id, '⚠️ Order sudah di-ACC sebelumnya.');
 
   // Ambil stok produk
-  const data = readJSON('stock/products.json');
+  const data = readJSON('products.json');
   let accountsDelivered = [];
 
   for (const item of order.items) {
@@ -150,7 +150,7 @@ bot.onText(/\/acc_(.+)/, async (msg, match) => {
     }
   }
 
-  writeJSON('stock/products.json', data);
+  writeJSON('products.json', data);
   orders[orderIdx].status = 'approved';
   orders[orderIdx].accounts = accountsDelivered;
   orders[orderIdx].approvedAt = new Date();
