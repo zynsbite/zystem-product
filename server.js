@@ -6,9 +6,11 @@ const path = require('path');
 const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
+const cors = require('cors');
+app.use(cors());
 const PORT = process.env.PORT || 3000;
 
-const BOT_TOKEN = process.env.BOT_TOKEN || '8965858471:AAFV66M2gvl5AJLGntSXxtHNRHprfLmEQVI';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8917164649:AAEu_q70pKWd1uAw_FT7XGIkrXjnQCrx08o';
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '8266866004';
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
